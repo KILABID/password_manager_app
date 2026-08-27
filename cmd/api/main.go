@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -11,6 +10,7 @@ import (
 	"crypt-pass/internal/auth/repository"
 	"crypt-pass/internal/auth/service"
 	"crypt-pass/internal/infrastructure"
+	"crypt-pass/pkg/middleware"
 )
 
 func main() {
@@ -18,7 +18,8 @@ func main() {
 
 	db, err := infrastructure.Connect(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	authRepo := repository.NewAuthRepository(db)
@@ -31,13 +32,18 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
 
+	// Wrap router with Logger middleware
+	handlerWithMiddleware := middleware.Logger(mux)
+
 	port := os.Getenv("APP_PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	fmt.Printf("Server running on port :%s...\n", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	slog.Info("Server running", slog.String("port", port))
+	if err := http.ListenAndServe(":"+port, handlerWithMiddleware); err != nil {
+		slog.Error("Server failed to start", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 }
+
