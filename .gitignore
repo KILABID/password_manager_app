@@ -1,0 +1,8 @@
+.env
+.git
+
+.agents
+skills-lock.json
+database_migration_guide.md
+
+/pkg
