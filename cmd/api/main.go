@@ -10,27 +10,35 @@ import (
 	"crypt-pass/internal/auth/repository"
 	"crypt-pass/internal/auth/service"
 	"crypt-pass/internal/infrastructure"
+	"crypt-pass/pkg/jwt"
 	"crypt-pass/pkg/middleware"
 )
 
 func main() {
-	cfg := config.LoadDBConfig()
+	dbCfg := config.LoadDBConfig()
+	jwtCfg := config.LoadJWTConfig()
 
-	db, err := infrastructure.Connect(cfg)
+	db, err := infrastructure.Connect(dbCfg)
 	if err != nil {
 		slog.Error("Failed to connect to database", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
+	jwtService := jwt.NewJWTService(jwtCfg)
 	authRepo := repository.NewAuthRepository(db)
-	authService := service.NewAuthService(authRepo)
+	authService := service.NewAuthService(authRepo, jwtService)
 	authHandler := handler.NewAuthHandler(authService)
+
+	authMiddleware := middleware.AuthMiddleware(jwtService)
 
 	mux := http.NewServeMux()
 
-	// Auth routes
+	// Public auth routes
 	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
+
+	// Protected routes (require valid JWT)
+	mux.Handle("/api/v1/auth/me", authMiddleware(http.HandlerFunc(authHandler.GetProfile)))
 
 	// Wrap router with Logger middleware
 	handlerWithMiddleware := middleware.Logger(mux)
@@ -46,4 +54,5 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 

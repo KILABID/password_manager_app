@@ -6,6 +6,7 @@ import (
 
 	entity "crypt-pass/internal/auth/entity"
 	"crypt-pass/internal/auth/repository"
+	jwtPkg "crypt-pass/pkg/jwt"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -13,15 +14,20 @@ import (
 
 type AuthService interface {
 	Register(ctx context.Context, name, email, password, backupSalt string) (*entity.User, error)
-	Login(ctx context.Context, email, password string) (*entity.User, error)
+	Login(ctx context.Context, email, password string) (*entity.User, string, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 }
 
 type authServiceImpl struct {
-	repo repository.AuthRepository
+	repo       repository.AuthRepository
+	jwtService jwtPkg.JWTService
 }
 
-func NewAuthService(repo repository.AuthRepository) AuthService {
-	return &authServiceImpl{repo: repo}
+func NewAuthService(repo repository.AuthRepository, jwtService jwtPkg.JWTService) AuthService {
+	return &authServiceImpl{
+		repo:       repo,
+		jwtService: jwtService,
+	}
 }
 
 func (s *authServiceImpl) Register(ctx context.Context, name, email, password, backupSalt string) (*entity.User, error) {
@@ -50,15 +56,25 @@ func (s *authServiceImpl) Register(ctx context.Context, name, email, password, b
 	return user, nil
 }
 
-func (s *authServiceImpl) Login(ctx context.Context, email, password string) (*entity.User, error) {
+func (s *authServiceImpl) Login(ctx context.Context, email, password string) (*entity.User, string, error) {
 	user, err := s.repo.GetUserByEmail(ctx, email)
 	if err != nil || user == nil {
-		return nil, errors.New("invalid email or password")
+		return nil, "", errors.New("invalid email or password")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.MasterPasswordHash), []byte(password)); err != nil {
-		return nil, errors.New("invalid email or password")
+		return nil, "", errors.New("invalid email or password")
 	}
 
-	return user, nil
+	token, err := s.jwtService.GenerateToken(user.ID, user.Email)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return user, token, nil
 }
+
+func (s *authServiceImpl) GetUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
+	return s.repo.GetUserByID(ctx, id)
+}
+
